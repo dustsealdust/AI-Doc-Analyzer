@@ -23,7 +23,7 @@ DOTENV = BASE_DIR / ".env"
 
 DEVELOPER_EMAIL = "chen2604329@qq.com"
 APP_NAME = "多源文件数据合并助手"
-APP_VERSION = "v1.0.0"
+APP_VERSION = "v1.0.1"
 COPYRIGHT = f"© 2026 {APP_NAME} · 保留所有权利"
 
 DEFAULT_BASE_URL = "https://maas.qianwenaiapi.com/compatible-mode/v1"
@@ -51,8 +51,27 @@ def load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
-def mask(key: str) -> str:
-    return f"{key[:8]}…{key[-4:]}" if len(key) > 14 else "已配置"
+def secret_or_env(name: str, default: str = "") -> str:
+    """优先读 Streamlit Cloud 的 Secrets，其次环境变量（.env 也走环境变量）。"""
+    try:
+        if name in st.secrets:
+            value = str(st.secrets[name]).strip()
+            if value:
+                return value
+    except Exception:
+        pass  # 本地没有 secrets.toml 时会抛异常，忽略即可
+    return (os.getenv(name) or default).strip()
+
+
+def is_valid_key(key: str) -> bool:
+    """严格校验：非空、长度 >= 20、且以 sk- 开头。占位符一律不算。"""
+    key = (key or "").strip()
+    return len(key) >= 20 and key.startswith("sk-")
+
+
+def resolve_api_key(typed: str) -> str:
+    """界面输入优先，其次 Secrets / 环境变量。"""
+    return (typed or "").strip() or secret_or_env("OPENAI_API_KEY")
 
 
 def run_llm(api_key: str, base_url: str, model: str, payload: dict) -> str:
@@ -150,22 +169,23 @@ with st.sidebar:
         placeholder="留空 = 使用 .env 中的 OPENAI_API_KEY",
     )
     base_url_input = st.text_input(
-        "Base URL", value=os.getenv("OPENAI_BASE_URL", DEFAULT_BASE_URL)
+        "Base URL", value=secret_or_env("OPENAI_BASE_URL", DEFAULT_BASE_URL)
     )
     model_input = st.text_input(
-        "Model", value=os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+        "Model", value=secret_or_env("OPENAI_MODEL", DEFAULT_MODEL)
     )
 
-    effective_key = api_key_input.strip() or os.getenv("OPENAI_API_KEY", "")
+    effective_key = resolve_api_key(api_key_input)
+    valid_key = is_valid_key(effective_key)
 
-    if effective_key:
-        st.success(f"密钥已就绪：{mask(effective_key)}")
+    if valid_key:
+        st.success("✅ 密钥已就绪，随时可以开始分析。")
     else:
-        st.warning("未检测到密钥，AI 分析功能不可用")
+        st.warning("⚠️ 未检测到有效 API Key，请在左侧输入或检查云端 Secrets 配置。")
 
     if st.button("测试连接", use_container_width=True):
-        if not effective_key:
-            st.error("请先填写 API Key")
+        if not valid_key:
+            st.error("请先配置有效的 API Key")
         else:
             try:
                 with st.spinner("正在测试连接……"):
@@ -222,6 +242,9 @@ if col_clear.button("清空结果", use_container_width=True):
 if run_clicked:
     if not uploaded:
         st.warning("请先上传至少一个文件")
+    elif not valid_key:
+        st.error("请先配置有效的 API Key")
+        st.stop()
     else:
         errors, records = [], []
         progress = st.progress(0.0, text="正在解析文件……")
@@ -238,15 +261,12 @@ if run_clicked:
         payload = build_payload(records, store)
 
         report = ""
-        if effective_key:
-            try:
-                with st.spinner(f"正在调用 {model_input.strip()} 进行分析……"):
-                    report = run_llm(effective_key, base_url_input.strip(),
-                                     model_input.strip(), payload)
-            except Exception as exc:
-                errors.append(f"AI 分析失败：{exc}")
-        else:
-            errors.append("未配置 API Key，已跳过 AI 分析")
+        try:
+            with st.spinner(f"正在调用 {model_input.strip()} 进行分析……"):
+                report = run_llm(effective_key, base_url_input.strip(),
+                                 model_input.strip(), payload)
+        except Exception as exc:
+            errors.append(f"AI 分析失败：{exc}")
 
         st.session_state["payload"] = payload
         st.session_state["report"] = report
