@@ -1,8 +1,8 @@
 # 多源文件数据合并助手 · data-merge
 
-> **开发者**：chen2604329@qq.com ｜ **版本**：v1.0.0
+> **开发者**：chen2604329@qq.com ｜ **版本**：v1.0.1
 > © 2026 版权所有，保留一切权利。未经书面许可，禁止复制、二次分发或商业使用。详见 [COPYRIGHT.md](COPYRIGHT.md)。
-
+> 可以直接访问 https://ai-doc-analyzer-ngckm9dzdcpy8sbdsnpaqm.streamlit.app/
 把 **PDF / Word / Excel** 里的数据，按 **主键（默认"姓名"）** 合并成一个个完整实体，
 再交给大模型做总结分析。
 
